@@ -9,9 +9,9 @@ For the remainer of this document, the cluster that is being dumped will be refe
 This migration process boils down to selectively omitting state that is not portable between clusters, as well as making some assumptions about the clusters we're dealing with. Those assumptions include:
 * **kube-dns add-on** This allows abstracting away the services' clusterIPs, which is inherentely non-portable across clusters with different serviceCIDRS.
 
-* **api object compatiblilty** Any api object type (eg: replicaset) that is dumped from the *source cluster* must be supported by the *target cluster*.
+* **api object compatibilty** Any api object type (eg: replicaset) that is dumped from the *source cluster* must be supported by the *target cluster*.
 
-	As a general rule, if the *target cluster's* Kubernetes version is >= *source cluster's* Kubernets version, this will not be a problem.
+	As a general rule, if the *target cluster's* Kubernetes version is >= *source cluster's* Kubernetes version, this will not be a problem.
 
 * **blank target slate** The *target cluster* to has no deployment state beyond a "stock" cluster. In the CoreOS case, the stock cluster state is everything in the `kube-system` namespace along with the service token in the default namespace.
 
@@ -19,9 +19,9 @@ This migration process boils down to selectively omitting state that is not port
 
 	Name conflicts are easy to defect, but more subtle issues like services selecting unintended pre-existing pods is another more subtle situation that can arise. We will assume **blank target slate** for the remainder of this document.
 
-As of now, this is not entirely supported upstream. This `get --export` flag is supposed to do something like this, but leaves plenty of state that we do not consider to be portable in this case. (TODO: link to issue).
+As of now, this is not entirely supported upstream. This `get --export` flag is supposed to do something like this, but leaves plenty of state that we do not consider to be portable in this case. [github issue](https://github.com/kubernetes/kubernetes/issues/21582).
 
-We'll explain step-by-step how the CoreOS infrastructure team migrates deployments between Kubernets clusters today.
+We'll explain step-by-step how the CoreOS infrastructure team migrates deployments between Kubernetes clusters today.
 
 ### Dump from the source cluster
 
@@ -32,7 +32,7 @@ mkdir ./cluster-dump
 ```
 
 
-Get a list all namespaces that are not `kube-system` or `default`. This represents the list of namespaces that we want to migrate:
+First, get a list of all namespaces that are not `kube-system` or `default` and record them to a file on disk. This represents the list of namespaces that we want to migrate:
 
 ```shell
 kubectl get --export -o=json ns | \
@@ -49,7 +49,7 @@ jq '.items[] |
 ```
 
 
-For each of these namespaces, dump all services, replicationcontrollers, secrets and daemonsets. Strip any non-portable fields from the objects. If you wish to migrate additional controller resource types (replicasets, deplopyments, etc), make sure to add them to the resource type list:
+For each of these namespaces, dump all services, replication controllers, secrets and daemonsets to a file on disk. Strip any non-portable fields from the objects. If you wish to migrate additional controller resource types (replicasets, deployments, etc), make sure to add them to the resource type list:
 
 ```shell
 for ns in $(jq -r '.metadata.name' < ./cluster-dump/ns.json);do
@@ -73,7 +73,9 @@ for ns in $(jq -r '.metadata.name' < ./cluster-dump/ns.json);do
 done
 ```
 
-Notice that pods and service tokens are explicitly omitted altogether, as they are inherently non-portable resources that are created and managed by other components. The general rule for what is portable across heterogenous clusters is is "services, controllers and secrets that aren't service tokens".
+Notice that pods and service tokens are explicitly omitted altogether, as they are inherently non-portable resources that are created and managed by other components. The general rule for what is portable across heterogenous clusters is is "services (resolved via cluster DNS), controllers and secrets that aren't service tokens".
+
+**Make sure you clean up these JSON files. They contain your secrets!**
 
 ### Restore to target cluster
 
